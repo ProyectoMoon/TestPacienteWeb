@@ -700,8 +700,6 @@
             <div>Última caída: <b id="pt-fall-last">Ninguna</b></div>
           </div>
           <div class="pt-fall-controls">
-            <!-- TEST: borrar este botón cuando termines de probar -->
-            <button type="button" class="pt-ghost-btn" onclick="ptSimulateFall()"><i class="ti ti-test-pipe"></i> Simular caída</button>
             <button type="button" class="pt-fall-dismiss" id="pt-fall-dismiss" onclick="ptDismissFall()">Estoy bien (falsa alarma)</button>
           </div>
         </div>
@@ -1409,7 +1407,7 @@
     ------------------------------------------------------------------- */
     const EMAILJS_PUBLIC_KEY  = 'N9FKmH8nhfya8L5d7';
     const EMAILJS_SERVICE_ID  = 'service_w2r8stx';
-    const EMAILJS_TEMPLATE_ID = 'TU_TEMPLATE_ID';
+    const EMAILJS_TEMPLATE_ID = 'template_5w0va9e';
 
     if (window.emailjs && EMAILJS_PUBLIC_KEY !== 'TU_PUBLIC_KEY') {
       emailjs.init(EMAILJS_PUBLIC_KEY);
@@ -1421,13 +1419,20 @@
       return session ? session.email : '';
     }
 
+    // Tiempo mínimo entre mails (para no gastar los 200 mails/mes del plan gratis).
+    // Para probar más rápido podés bajarlo, ej: 30 * 1000 (30 segundos).
+    const EMAILJS_COOLDOWN_MS = 5 * 60 * 1000;
+    let ptLastEmailTs = 0;
+
     function ptSendEmergencyEmail(criticos) {
       const destino = ptGetEmergencyEmail();
       if (!destino) return; // no hay sesión, no se manda nada
-      if (!window.emailjs || EMAILJS_PUBLIC_KEY === 'TU_PUBLIC_KEY') {
+      if (!window.emailjs || EMAILJS_PUBLIC_KEY === 'TU_PUBLIC_KEY' || EMAILJS_TEMPLATE_ID === 'TU_TEMPLATE_ID') {
         console.warn('MOON: falta configurar EmailJS (Service ID / Template ID / Public Key) para poder mandar el mail.');
         return;
       }
+      if (Date.now() - ptLastEmailTs < EMAILJS_COOLDOWN_MS) return;
+      ptLastEmailTs = Date.now();
       const profile = ptGetMyProfile();
       const nombrePaciente = profile ? profile.name : 'Paciente';
 
@@ -1437,19 +1442,24 @@
       const partes = [];
       if (hayCaida) partes.push('El paciente ' + nombrePaciente + ' sufrió una CAÍDA y no se movió después del impacto.');
       if (vitales.length) partes.push('Valor crítico en: ' + vitales.join(', ') + '.');
-      partes.push('Por favor revisá su estado de inmediato.');
 
       emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
         destino: destino,
         to_email: destino,
         email: destino,
         paciente: nombrePaciente,
+        name: 'MOON',
+        bpm: document.getElementById('pt-val-bpm').textContent,
+        spo2: document.getElementById('pt-val-spo2').textContent,
+        caida: hayCaida ? 'Sí' : 'No',
+        fecha: new Date().toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' }),
         titulo: hayCaida ? 'Alerta MOON — caída detectada' : 'Alerta MOON — valor crítico',
         mensaje: partes.join(' ')
       }).then(() => {
         console.log('MOON: mail de emergencia enviado a ' + destino);
       }).catch((err) => {
         console.error('MOON: error al enviar el mail de emergencia', err);
+        ptLastEmailTs = 0; // si falló, permite reintentar en el próximo chequeo
       });
     }
 
@@ -1589,17 +1599,6 @@
       const profile = ptGetMyProfile();
       if (profile) { profile.lastFall = new Date().toISOString(); ptSaveMyProfile(profile); }
       ptCheckAlarm();
-    }
-
-    // TEST: simula un impacto + quietud (borrar junto con el botón cuando termines de probar)
-    function ptSimulateFall() {
-      if (fallState !== 'idle') return;
-      ptProcessG(5.0);
-      let n = 0;
-      const t = setInterval(() => {
-        ptProcessG(1.0 + (Math.random() - 0.5) * 0.1);
-        if (++n >= 40) clearInterval(t);
-      }, 100);
     }
 
     function ptDismissFall() {
